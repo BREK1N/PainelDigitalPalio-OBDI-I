@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Logs de diagnóstico enviados pelo app. O celular autentica como
+    // usuário anônimo só para poder escrever. Leitura é feita exclusivamente
+    // pelo Console do Firebase (acesso admin, que ignora estas regras) —
+    // nenhum client SDK (web/app) pode ler, atualizar ou apagar os logs.
+    match /device_logs/{sessionId} {
+      allow create: if request.auth != null;
+      allow read, update, delete: if false;
+
+      match /entries/{entryId} {
+        allow create: if request.auth != null;
+        allow read, update, delete: if false;
+      }
+    }
+  }
+}

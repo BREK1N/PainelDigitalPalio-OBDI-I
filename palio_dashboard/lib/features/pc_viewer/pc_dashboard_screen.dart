@@ -38,6 +38,7 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
         backgroundColor: AppTheme.surface,
         title: const Text('PalioDash — PC Viewer'),
         actions: [
+          if (mode == PcDataSourceMode.live) _buildStatusBadge(data.btStatus),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: DropdownButton<PcDataSourceMode>(
@@ -118,6 +119,25 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(ConnectionStatus status) {
+    final (color, label) = switch (status) {
+      ConnectionStatus.connected => (Colors.greenAccent, 'Conectado'),
+      ConnectionStatus.connecting => (Colors.amberAccent, 'Conectando...'),
+      ConnectionStatus.disconnected => (Colors.redAccent, 'Desconectado'),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 10, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(color: color, fontSize: 13)),
         ],
       ),
     );

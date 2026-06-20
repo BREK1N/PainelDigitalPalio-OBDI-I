@@ -18,16 +18,25 @@ final dataSourceModeProvider = StateProvider<DataSourceMode>(
 /// pareado (MAC salvo em SharedPreferences) e inicia o loop de PIDs.
 final obdDataProvider = StreamProvider<OBDDataModel>((ref) {
   final mode = ref.watch(dataSourceModeProvider);
-  if (mode == DataSourceMode.live) {
-    return _liveObdStream(ref);
-  }
+  final source = mode == DataSourceMode.live
+      ? _liveObdStream(ref)
+      : _simulatedObdStream();
 
+  return source.map((data) {
+    if (ref.read(wsServerRunningProvider)) {
+      ref.read(wsServerProvider).broadcast(data);
+    }
+    return data;
+  });
+});
+
+Stream<OBDDataModel> _simulatedObdStream() {
   final start = DateTime.now();
   return Stream.periodic(
     const Duration(milliseconds: 100),
     (_) => OBDDataModel.simulated(DateTime.now().difference(start)),
   );
-});
+}
 
 Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
   final btManager = ref.watch(btManagerProvider);

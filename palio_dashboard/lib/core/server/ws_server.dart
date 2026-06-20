@@ -39,17 +39,52 @@ class WsServer {
   }
 }
 
-/// Retorna o primeiro endereço IPv4 não-loopback da rede local, usado para
-/// exibir ao usuário o endereço ws://IP:porta a ser digitado no PC.
+/// Retorna o endereço IPv4 da rede Wi-Fi local, usado para exibir ao usuário
+/// o endereço ws://IP:porta a ser digitado no PC.
+///
+/// Android expõe várias interfaces de rede ao mesmo tempo (Wi-Fi, dados
+/// móveis, VPN...). Pegar a primeira "qualquer" pode mostrar o IP da
+/// interface de dados móveis — inalcançável pelo PC mesmo que ambos estejam
+/// na mesma Wi-Fi — fazendo a conexão ficar "conectando" para sempre. Por
+/// isso priorizamos a interface chamada "wlan" (padrão do Wi-Fi no Android)
+/// e, como reforço, endereços em faixas privadas típicas de rede doméstica.
 Future<String?> getLocalIpAddress() async {
   final interfaces = await NetworkInterface.list(
     type: InternetAddressType.IPv4,
     includeLoopback: false,
   );
+
+  for (final interface in interfaces) {
+    if (!interface.name.toLowerCase().contains('wlan')) continue;
+    for (final addr in interface.addresses) {
+      if (!addr.isLoopback) return addr.address;
+    }
+  }
+
+  for (final interface in interfaces) {
+    for (final addr in interface.addresses) {
+      if (!addr.isLoopback && _isPrivateLanAddress(addr.address)) {
+        return addr.address;
+      }
+    }
+  }
+
   for (final interface in interfaces) {
     for (final addr in interface.addresses) {
       if (!addr.isLoopback) return addr.address;
     }
   }
   return null;
+}
+
+/// true para faixas de IP típicas de roteador doméstico/Wi-Fi local — usado
+/// para descartar o IP de dados móveis quando não há interface "wlan".
+bool _isPrivateLanAddress(String address) {
+  final parts = address.split('.').map(int.tryParse).toList();
+  if (parts.length != 4 || parts.any((p) => p == null)) return false;
+  final a = parts[0]!, b = parts[1]!;
+  if (a == 192 && b == 168) return true;
+  if (a == 10) return true;
+  if (a == 172 && b >= 16 && b <= 31) return true;
+  return false;
 }

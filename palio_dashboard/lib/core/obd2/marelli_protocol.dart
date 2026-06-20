@@ -25,29 +25,42 @@ class MarelliFormulas {
   static double voltage(List<int> bytes) => bytes[0] / 10;
 }
 
-/// Sequência de comandos AT enviados ao ELM327 na inicialização.
-/// ATSP4 = ISO 9141-2 (4AF/4EF/59F). Use [kElm327InitKwp2000] para o IAW 5AF.
-const List<String> kElm327InitIso9141 = [
+/// Comandos AT que configuram apenas o chip ELM327 em si — não dependem da
+/// ECU do carro estar ligada/respondendo. Se algum desses falhar, o problema
+/// é no adaptador/Bluetooth, não na ECU.
+/// ATSP4 = ISO 9141-2 (4AF/4EF/59F). Use [kElm327SetupKwp2000] para o IAW 5AF.
+const List<String> kElm327SetupIso9141 = [
   'ATZ',
   'ATE0',
   'ATL0',
   'ATH1',
   'ATSP4',
-  'ATSI',
   'ATAT2',
   'ATST96',
 ];
 
-const List<String> kElm327InitKwp2000 = [
+const List<String> kElm327SetupKwp2000 = [
   'ATZ',
   'ATE0',
   'ATL0',
   'ATH1',
   'ATSP5',
-  'ATSI',
   'ATAT2',
   'ATST96',
 ];
+
+/// Comando que efetivamente tenta "acordar" a ECU via slow-init 5-baud. Pode
+/// falhar legitimamente se a ignição estiver desligada — isso não significa
+/// que o adaptador está desconectado, só que a ECU ainda não respondeu.
+const String kElm327WakeEcuCommand = 'ATSI';
+
+/// ATZ reinicia o microcontrolador do ELM327 — no hardware real isso demora
+/// bem mais que os outros comandos AT (até ~2s em adaptadores genéricos).
+const Duration kAtzTimeout = Duration(seconds: 3);
+
+/// A tentativa de slow-init pode levar alguns segundos até desistir quando a
+/// ECU não responde (ignição desligada, fiação, protocolo errado etc.).
+const Duration kWakeEcuTimeout = Duration(seconds: 5);
 
 /// Resultado do parsing de uma resposta ISO 9141-2 do ELM327.
 class MarelliParseResult {

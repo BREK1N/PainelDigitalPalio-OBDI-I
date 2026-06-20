@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/bluetooth/bt_device_model.dart';
+import '../../core/diagnostics/diagnostics_provider.dart';
+import '../../core/obd2/obd2_service.dart';
 import '../../core/ota/ota_dialog.dart';
 import '../../shared/settings/app_settings.dart';
 import '../../shared/settings/app_settings_provider.dart';
@@ -16,11 +18,31 @@ Future<void> _connectToDevice(
 ) async {
   ref.read(connectingAddressProvider.notifier).state = device.address;
   try {
-    await ref.read(btManagerProvider).connect(device.address);
+    final btManager = ref.read(btManagerProvider);
+    await btManager.connect(device.address);
+
+    // Testa a inicialização real do ELM327 aqui, em vez de só confirmar o
+    // socket Bluetooth — é o que evita dizer "conectado" quando o adaptador
+    // na verdade não respondeu à configuração.
+    final obd2Service = Obd2Service(
+      btManager,
+      logSink: ref.read(remoteLogServiceProvider).log,
+    );
+    await obd2Service.initialize();
+    final ecuResponding = obd2Service.lastEcuResponding;
+    await obd2Service.dispose();
+
     ref.read(dataSourceModeProvider.notifier).state = DataSourceMode.live;
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Conectado a ${device.name}')),
+        SnackBar(
+          content: Text(
+            ecuResponding
+                ? 'Conectado a ${device.name} — ECU respondendo'
+                : 'Adaptador ${device.name} conectado, mas a ECU não '
+                    'respondeu (ligue a ignição e tente de novo)',
+          ),
+        ),
       );
     }
   } catch (e) {

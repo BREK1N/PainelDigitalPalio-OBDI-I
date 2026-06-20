@@ -29,16 +29,38 @@ class Obd2Service {
 
   bool _running = false;
 
-  /// Envia a sequência de inicialização ATZ/ATE0/.../ATSI etc. Lança
-  /// [BtCommandTimeoutException] se a ECU não responder a algum comando AT.
+  bool get lastEcuResponding => _last.ecuResponding;
+
+  /// Configura o ELM327 (ATZ/ATE0/.../ATST96) e tenta acordar a ECU (ATSI).
+  /// Lança [BtCommandTimeoutException] apenas se o próprio ELM327 não
+  /// responder à configuração — isso indica problema no adaptador/Bluetooth.
+  /// Se só a ECU não responder (ignição desligada, por exemplo), o adaptador
+  /// segue marcado como conectado e [ecuResponding] fica false; o loop de
+  /// PIDs continua tentando a cada ciclo.
   Future<void> initialize({EcuProtocol protocol = EcuProtocol.iso9141}) async {
-    final sequence = protocol == EcuProtocol.kwp2000
-        ? kElm327InitKwp2000
-        : kElm327InitIso9141;
-    for (final command in sequence) {
-      await btManager.sendCommand(command);
+    final setupSequence = protocol == EcuProtocol.kwp2000
+        ? kElm327SetupKwp2000
+        : kElm327SetupIso9141;
+    for (final command in setupSequence) {
+      final timeout = command == 'ATZ' ? kAtzTimeout : BtManager.defaultTimeout;
+      await btManager.sendCommand(command, timeout: timeout);
     }
     _last = _last.copyWith(btStatus: ConnectionStatus.connected);
+
+    try {
+      await btManager.sendCommand(
+        kElm327WakeEcuCommand,
+        timeout: kWakeEcuTimeout,
+      );
+      _last = _last.copyWith(ecuResponding: true);
+    } on BtCommandTimeoutException {
+      _logSink?.call(
+        LogLevel.warn,
+        'obd2',
+        'ECU não respondeu ao slow-init (ignição desligada ou cabo solto?)',
+      );
+      _last = _last.copyWith(ecuResponding: false);
+    }
   }
 
   /// Inicia o loop contínuo de leitura dos PIDs em [pids] (default:

@@ -18,11 +18,20 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Patch flutter_bluetooth_serial (pacote sem manutenção desde 2021)
+        run: |
+          PKG_DIR=$(find "${PUB_CACHE:-$HOME/.pub-cache}" -maxdepth 4 -type d -name 'flutter_bluetooth_serial-*' | head -n1)
+          GRADLE_FILE="$PKG_DIR/android/build.gradle"
+          echo "Patching $GRADLE_FILE"
+          sed -i 's/jcenter()/mavenCentral()/g' "$GRADLE_FILE"
+          sed -i 's/compileSdkVersion 30/compileSdkVersion 36/' "$GRADLE_FILE"
+          sed -i "/^android {/a\\    namespace 'io.github.edufolly.flutterbluetoothserial'" "$GRADLE_FILE"
+          cat "$GRADLE_FILE"
 
       - name: Build APK release
         run: flutter build apk --release --obfuscate --split-debug-info=debug_info/

@@ -48,16 +48,29 @@ class Obd2Service {
     _last = _last.copyWith(btStatus: ConnectionStatus.connected);
 
     try {
-      await btManager.sendCommand(
+      final response = await btManager.sendCommand(
         kElm327WakeEcuCommand,
         timeout: kWakeEcuTimeout,
       );
-      _last = _last.copyWith(ecuResponding: true);
+      // O ELM327 pode responder rápido com um texto de erro (ex.: "BUS
+      // INIT: ...ERROR", "UNABLE TO CONNECT") em vez de dar timeout — sem
+      // checar o conteúdo, isso seria lido como "ECU respondendo" mesmo
+      // com a ignição desligada.
+      final responded = !isElmFailureResponse(response);
+      _logSink?.call(
+        responded ? LogLevel.info : LogLevel.warn,
+        'obd2',
+        responded
+            ? 'ECU respondeu ao slow-init (ATSI)'
+            : 'ECU não respondeu ao slow-init (ignição desligada ou cabo solto?)',
+        raw: response,
+      );
+      _last = _last.copyWith(ecuResponding: responded);
     } on BtCommandTimeoutException {
       _logSink?.call(
         LogLevel.warn,
         'obd2',
-        'ECU não respondeu ao slow-init (ignição desligada ou cabo solto?)',
+        'ECU não respondeu ao slow-init (timeout, ignição desligada ou cabo solto?)',
       );
       _last = _last.copyWith(ecuResponding: false);
     }

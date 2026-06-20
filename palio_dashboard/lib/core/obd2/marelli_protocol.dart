@@ -62,6 +62,19 @@ const Duration kAtzTimeout = Duration(seconds: 3);
 /// ECU não responde (ignição desligada, fiação, protocolo errado etc.).
 const Duration kWakeEcuTimeout = Duration(seconds: 5);
 
+/// true se [raw] contém alguma mensagem de erro textual do ELM327 — usado
+/// tanto para validar respostas de PID quanto a resposta do ATSI (que pode
+/// "responder" rapidamente com texto de erro em vez de dar timeout quando a
+/// ECU está desligada/não conectada).
+bool isElmFailureResponse(String raw) {
+  final upper = raw.toUpperCase();
+  return upper.contains('NO DATA') ||
+      upper.contains('ERROR') ||
+      upper.contains('UNABLE TO CONNECT') ||
+      upper.contains('STOPPED') ||
+      upper.contains('?');
+}
+
 /// Resultado do parsing de uma resposta ISO 9141-2 do ELM327.
 class MarelliParseResult {
   final List<int> dataBytes;
@@ -82,15 +95,9 @@ MarelliParseResult? parseMarelliResponse(String raw) {
   final cleaned = raw.replaceAll('>', '').trim();
   if (cleaned.isEmpty) return null;
 
-  final upper = cleaned.toUpperCase();
-  if (upper.contains('NO DATA') ||
-      upper.contains('ERROR') ||
-      upper.contains('UNABLE TO CONNECT') ||
-      upper.contains('STOPPED')) {
-    return null;
-  }
+  if (isElmFailureResponse(cleaned)) return null;
 
-  final tokens = upper
+  final tokens = cleaned.toUpperCase()
       .split(RegExp(r'[\s\r\n]+'))
       .where((t) => t.isNotEmpty)
       .toList();

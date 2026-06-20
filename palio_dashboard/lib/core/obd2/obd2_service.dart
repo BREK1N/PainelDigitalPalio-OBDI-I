@@ -50,10 +50,12 @@ class Obd2Service {
   }) async {
     _running = true;
     while (_running) {
+      var anyPidSucceeded = false;
       for (final pid in pids) {
         if (!_running) break;
-        await _readPid(pid);
+        if (await _readPid(pid)) anyPidSucceeded = true;
       }
+      _last = _last.copyWith(ecuResponding: anyPidSucceeded);
       _dataController.add(_last);
       await Future.delayed(cycleDelay);
     }
@@ -63,7 +65,8 @@ class Obd2Service {
     _running = false;
   }
 
-  Future<void> _readPid(MarelliPid pid) async {
+  /// Retorna true se o PID foi lido e parseado com sucesso neste ciclo.
+  Future<bool> _readPid(MarelliPid pid) async {
     try {
       final raw = await btManager.sendCommand(pid.command);
       final parsed = parseMarelliResponse(raw);
@@ -76,13 +79,15 @@ class Obd2Service {
             raw: raw,
           );
         }
-        return;
+        return false;
       }
       _loggedFailures.remove(pid);
       final value = pid.formula(parsed.dataBytes);
       _last = _applyPidValue(pid, value);
+      return true;
     } on BtCommandTimeoutException {
       // ECU não respondeu a este PID neste ciclo — já logado pelo BtManager.
+      return false;
     }
   }
 

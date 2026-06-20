@@ -18,6 +18,11 @@ class OBDDataModel {
   final bool engineRunning;
   final ConnectionStatus btStatus;
 
+  /// true quando ao menos um PID Marelli foi lido com sucesso no ciclo mais
+  /// recente — indica que a ECU está respondendo, distinto de [btStatus]
+  /// que só reflete se o adaptador ELM327 está conectado via Bluetooth.
+  final bool ecuResponding;
+
   const OBDDataModel({
     required this.rpm,
     required this.speedKmh,
@@ -33,6 +38,7 @@ class OBDDataModel {
     required this.activeDtcs,
     required this.engineRunning,
     required this.btStatus,
+    required this.ecuResponding,
   });
 
   OBDDataModel copyWith({
@@ -50,6 +56,7 @@ class OBDDataModel {
     List<String>? activeDtcs,
     bool? engineRunning,
     ConnectionStatus? btStatus,
+    bool? ecuResponding,
   }) {
     return OBDDataModel(
       rpm: rpm ?? this.rpm,
@@ -66,6 +73,7 @@ class OBDDataModel {
       activeDtcs: activeDtcs ?? this.activeDtcs,
       engineRunning: engineRunning ?? this.engineRunning,
       btStatus: btStatus ?? this.btStatus,
+      ecuResponding: ecuResponding ?? this.ecuResponding,
     );
   }
 
@@ -84,6 +92,7 @@ class OBDDataModel {
         'activeDtcs': activeDtcs,
         'engineRunning': engineRunning,
         'btStatus': btStatus.name,
+        'ecuResponding': ecuResponding,
       };
 
   factory OBDDataModel.fromJson(Map<String, dynamic> json) => OBDDataModel(
@@ -101,6 +110,7 @@ class OBDDataModel {
         activeDtcs: List<String>.from(json['activeDtcs'] as List),
         engineRunning: json['engineRunning'] as bool,
         btStatus: ConnectionStatus.values.byName(json['btStatus'] as String),
+        ecuResponding: json['ecuResponding'] as bool? ?? false,
       );
 
   factory OBDDataModel.empty() => OBDDataModel(
@@ -118,6 +128,7 @@ class OBDDataModel {
         activeDtcs: const [],
         engineRunning: false,
         btStatus: ConnectionStatus.disconnected,
+        ecuResponding: false,
       );
 
   /// Gera um snapshot fake a partir do tempo decorrido [elapsed] desde o
@@ -142,6 +153,7 @@ class OBDDataModel {
       activeDtcs: const [],
       engineRunning: true,
       btStatus: ConnectionStatus.connected,
+      ecuResponding: true,
     );
   }
 }

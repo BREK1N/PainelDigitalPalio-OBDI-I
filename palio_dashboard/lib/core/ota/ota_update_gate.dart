@@ -19,7 +19,7 @@ class _OtaUpdateGateState extends ConsumerState<OtaUpdateGate> {
   void initState() {
     super.initState();
     Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) checkAndPromptUpdate(context, ref);
+      if (mounted) checkAndPromptUpdate(context, ref, silent: true);
     });
   }
 

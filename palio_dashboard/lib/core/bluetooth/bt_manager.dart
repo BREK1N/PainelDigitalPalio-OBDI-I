@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../diagnostics/remote_log_service.dart';
 import 'bt_device_model.dart';
+import 'bt_permissions.dart';
 
 class BtCommandTimeoutException implements Exception {
   final String command;
@@ -49,11 +50,13 @@ class BtManager {
   bool get isConnected => _connection?.isConnected ?? false;
 
   Future<List<BtDeviceModel>> getBondedDevices() async {
+    await ensureBluetoothPermissions();
     final devices = await FlutterBluetoothSerial.instance.getBondedDevices();
     return devices.map(BtDeviceModel.fromBluetoothDevice).toList();
   }
 
   Future<void> connect(String address) async {
+    await ensureBluetoothPermissions();
     await disconnect();
     try {
       _connection = await BluetoothConnection.toAddress(address);

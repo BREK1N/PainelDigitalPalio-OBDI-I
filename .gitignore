@@ -1,3 +1,6 @@
+# Keystore de release (segredo - nunca commitar, ver GitHub Secrets)
+/keystore/
+
 # Miscellaneous
 *.class
 *.lock

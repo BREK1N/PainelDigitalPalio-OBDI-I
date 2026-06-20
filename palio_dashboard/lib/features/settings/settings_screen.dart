@@ -1,12 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/bluetooth/bt_device_model.dart';
 import '../../core/ota/ota_dialog.dart';
 import '../../shared/settings/app_settings.dart';
 import '../../shared/settings/app_settings_provider.dart';
 import '../../shared/theme/app_theme.dart';
 import '../dashboard/dashboard_provider.dart';
 import 'settings_provider.dart';
+
+Future<void> _connectToDevice(
+  BuildContext context,
+  WidgetRef ref,
+  BtDeviceModel device,
+) async {
+  ref.read(connectingAddressProvider.notifier).state = device.address;
+  try {
+    await ref.read(btManagerProvider).connect(device.address);
+    ref.read(dataSourceModeProvider.notifier).state = DataSourceMode.live;
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Conectado a ${device.name}')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao conectar a ${device.name}: $e')),
+      );
+    }
+  } finally {
+    ref.read(connectingAddressProvider.notifier).state = null;
+  }
+}
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -18,6 +44,7 @@ class SettingsScreen extends ConsumerWidget {
     final isServerRunning = ref.watch(wsServerRunningProvider);
     final speedUnit = ref.watch(speedUnitProvider);
     final dataSourceMode = ref.watch(dataSourceModeProvider);
+    final connectingAddress = ref.watch(connectingAddressProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -142,26 +169,22 @@ class SettingsScreen extends ConsumerWidget {
                             d.address,
                             style: const TextStyle(color: Colors.white54),
                           ),
-                          trailing: const Icon(
-                            Icons.chevron_right,
-                            color: Colors.white38,
-                          ),
-                          onTap: () async {
-                            await ref
-                                .read(btManagerProvider)
-                                .setPreferredAddress(d.address);
-                            ref.read(dataSourceModeProvider.notifier).state =
-                                DataSourceMode.live;
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '${d.name} definido para reconexão automática',
+                          trailing: connectingAddress == d.address
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppTheme.accent,
                                   ),
+                                )
+                              : const Icon(
+                                  Icons.chevron_right,
+                                  color: Colors.white38,
                                 ),
-                              );
-                            }
-                          },
+                          onTap: connectingAddress != null
+                              ? null
+                              : () => _connectToDevice(context, ref, d),
                         ),
                       ),
                     )

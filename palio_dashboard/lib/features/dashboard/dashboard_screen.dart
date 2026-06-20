@@ -100,34 +100,51 @@ class DashboardScreen extends ConsumerWidget {
                           child: RpmChart(spots: rpmHistory),
                         ),
                         Expanded(
-                          child: Row(
+                          child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              _StatusBadge(label: 'BT', status: data.btStatus),
-                              const SizedBox(width: 12),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.warning_amber,
-                                  color: Colors.white54,
-                                ),
-                                tooltip: 'Códigos de falha',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const DtcScreen(),
+                              Wrap(
+                                alignment: WrapAlignment.center,
+                                spacing: 10,
+                                runSpacing: 4,
+                                children: [
+                                  _StatusBadge(
+                                    label: 'OBD2',
+                                    status: data.btStatus,
                                   ),
-                                ),
+                                  _EcuStatusBadge(
+                                    responding: data.ecuResponding,
+                                  ),
+                                ],
                               ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.settings,
-                                  color: Colors.white54,
-                                ),
-                                tooltip: 'Configurações',
-                                onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => const SettingsScreen(),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.warning_amber,
+                                      color: Colors.white54,
+                                    ),
+                                    tooltip: 'Códigos de falha',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const DtcScreen(),
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.settings,
+                                      color: Colors.white54,
+                                    ),
+                                    tooltip: 'Configurações',
+                                    onPressed: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const SettingsScreen(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -140,6 +157,27 @@ class DashboardScreen extends ConsumerWidget {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _EcuStatusBadge extends StatelessWidget {
+  final bool responding;
+
+  const _EcuStatusBadge({required this.responding});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = responding ? AppTheme.gaugeNormal : AppTheme.gaugeDanger;
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.circle, size: 12, color: color),
+          const SizedBox(width: 6),
+          const Text('ECU', style: TextStyle(color: Colors.white70)),
+        ],
       ),
     );
   }

@@ -27,3 +27,7 @@ final localIpProvider = FutureProvider.autoDispose<String?>((ref) {
 });
 
 final wsServerRunningProvider = StateProvider<bool>((ref) => false);
+
+/// Endereço do dispositivo sendo testado/conectado no momento, usado para
+/// mostrar um indicador de carregamento no item da lista em Configurações.
+final connectingAddressProvider = StateProvider<String?>((ref) => null);

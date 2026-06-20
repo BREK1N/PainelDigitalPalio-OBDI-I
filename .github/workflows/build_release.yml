@@ -36,6 +36,22 @@ jobs:
           sed -i "/^android {/a\\    namespace 'io.github.edufolly.flutterbluetoothserial'" "$GRADLE_FILE"
           cat "$GRADLE_FILE"
 
+      - name: Configurar keystore de release
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          mkdir -p ../keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > ../keystore/palio-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../../../keystore/palio-release.jks
+          EOF
+
       - name: Build APK release
         run: flutter build apk --release --obfuscate --split-debug-info=debug_info/
 

@@ -7,16 +7,29 @@ import 'ota_service.dart';
 
 /// Consulta a release mais recente e, se houver atualização, pergunta ao
 /// usuário antes de baixar/instalar. Nunca atualiza sem confirmação.
-Future<void> checkAndPromptUpdate(BuildContext context, WidgetRef ref) async {
+Future<void> checkAndPromptUpdate(
+  BuildContext context,
+  WidgetRef ref, {
+  bool silent = false,
+}) async {
   final otaService = ref.read(otaServiceProvider);
 
   OtaUpdateInfo? update;
   try {
     update = await otaService.checkForUpdate();
-  } catch (_) {
+  } catch (e) {
+    if (!silent && context.mounted) {
+      _showError(context, 'Falha ao verificar atualização: $e');
+    }
     return;
   }
-  if (update == null || !context.mounted) return;
+  if (!context.mounted) return;
+  if (update == null) {
+    if (!silent) {
+      _showError(context, 'Você já está na versão mais recente.');
+    }
+    return;
+  }
 
   final shouldUpdate = await showDialog<bool>(
     context: context,

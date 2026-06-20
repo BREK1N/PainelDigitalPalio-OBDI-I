@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +17,32 @@ import 'widgets/rpm_gauge.dart';
 import 'widgets/speed_gauge.dart';
 import 'widgets/temp_gauge.dart';
 
+Future<void> _connectEcu(BuildContext context, WidgetRef ref) async {
+  final service = ref.read(currentObd2ServiceProvider);
+  if (service == null || service.isLoopRunning) return;
+
+  ref.read(connectingEcuProvider.notifier).state = true;
+  try {
+    final ok = await service.connectEcu();
+    if (ok) {
+      unawaited(service.startLoop());
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'ECU respondendo'
+                : 'ECU não respondeu (verifique a ignição)',
+          ),
+        ),
+      );
+    }
+  } finally {
+    ref.read(connectingEcuProvider.notifier).state = false;
+  }
+}
+
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -24,6 +52,9 @@ class DashboardScreen extends ConsumerWidget {
     final data = obdAsync.value ?? OBDDataModel.empty();
     final rpmHistory = ref.watch(rpmHistoryProvider);
     final speedUnit = ref.watch(speedUnitProvider);
+    final connectingEcu = ref.watch(connectingEcuProvider);
+    final canConnectEcu =
+        data.btStatus == ConnectionStatus.connected && !data.ecuResponding;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -117,6 +148,32 @@ class DashboardScreen extends ConsumerWidget {
                                   ),
                                 ],
                               ),
+                              if (canConnectEcu)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: SizedBox(
+                                    height: 28,
+                                    child: connectingEcu
+                                        ? const Center(
+                                            child: SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: AppTheme.accent,
+                                              ),
+                                            ),
+                                          )
+                                        : TextButton(
+                                            onPressed: () =>
+                                                _connectEcu(context, ref),
+                                            child: const Text(
+                                              'Conectar à ECU',
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ),
+                                  ),
+                                ),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [

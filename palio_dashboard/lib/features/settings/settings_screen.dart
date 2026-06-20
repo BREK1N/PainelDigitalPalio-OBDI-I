@@ -21,15 +21,15 @@ Future<void> _connectToDevice(
     final btManager = ref.read(btManagerProvider);
     await btManager.connect(device.address);
 
-    // Testa a inicialização real do ELM327 aqui, em vez de só confirmar o
-    // socket Bluetooth — é o que evita dizer "conectado" quando o adaptador
-    // na verdade não respondeu à configuração.
+    // Testa a configuração real do ELM327 aqui, em vez de só confirmar o
+    // socket Bluetooth — evita dizer "conectado" quando o adaptador na
+    // verdade não respondeu. Conectar à ECU é uma etapa separada, feita
+    // pelo botão "Conectar à ECU" no Dashboard.
     final obd2Service = Obd2Service(
       btManager,
       logSink: ref.read(remoteLogServiceProvider).log,
     );
-    await obd2Service.initialize();
-    final ecuResponding = obd2Service.lastEcuResponding;
+    await obd2Service.setupAdapter();
     await obd2Service.dispose();
 
     ref.read(dataSourceModeProvider.notifier).state = DataSourceMode.live;
@@ -37,10 +37,8 @@ Future<void> _connectToDevice(
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ecuResponding
-                ? 'Conectado a ${device.name} — ECU respondendo'
-                : 'Adaptador ${device.name} conectado, mas a ECU não '
-                    'respondeu (ligue a ignição e tente de novo)',
+            'OBD2 conectado a ${device.name}. Use "Conectar à ECU" no '
+            'Dashboard.',
           ),
         ),
       );

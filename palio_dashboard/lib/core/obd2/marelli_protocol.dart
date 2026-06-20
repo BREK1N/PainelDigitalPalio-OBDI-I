@@ -49,18 +49,9 @@ const List<String> kElm327SetupKwp2000 = [
   'ATST96',
 ];
 
-/// Comando que efetivamente tenta "acordar" a ECU via slow-init 5-baud. Pode
-/// falhar legitimamente se a ignição estiver desligada — isso não significa
-/// que o adaptador está desconectado, só que a ECU ainda não respondeu.
-const String kElm327WakeEcuCommand = 'ATSI';
-
 /// ATZ reinicia o microcontrolador do ELM327 — no hardware real isso demora
 /// bem mais que os outros comandos AT (até ~2s em adaptadores genéricos).
 const Duration kAtzTimeout = Duration(seconds: 3);
-
-/// A tentativa de slow-init pode levar alguns segundos até desistir quando a
-/// ECU não responde (ignição desligada, fiação, protocolo errado etc.).
-const Duration kWakeEcuTimeout = Duration(seconds: 5);
 
 /// true se [raw] contém alguma mensagem de erro textual do ELM327 — usado
 /// tanto para validar respostas de PID quanto a resposta do ATSI (que pode

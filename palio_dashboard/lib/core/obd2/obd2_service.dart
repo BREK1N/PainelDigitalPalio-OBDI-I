@@ -31,13 +31,17 @@ class Obd2Service {
 
   bool get lastEcuResponding => _last.ecuResponding;
 
-  /// Configura o ELM327 (ATZ/ATE0/.../ATST96) e tenta acordar a ECU (ATSI).
-  /// Lança [BtCommandTimeoutException] apenas se o próprio ELM327 não
-  /// responder à configuração — isso indica problema no adaptador/Bluetooth.
-  /// Se só a ECU não responder (ignição desligada, por exemplo), o adaptador
-  /// segue marcado como conectado e [ecuResponding] fica false; o loop de
-  /// PIDs continua tentando a cada ciclo.
-  Future<void> initialize({EcuProtocol protocol = EcuProtocol.iso9141}) async {
+  bool get isLoopRunning => _running;
+
+  /// Configura apenas o ELM327 (ATZ/ATE0/.../ATST96) — não tenta falar com a
+  /// ECU do carro. Lança [BtCommandTimeoutException] se o próprio chip não
+  /// responder à configuração, indicando problema no adaptador/Bluetooth,
+  /// não na ECU. Conectar ao adaptador e conectar à ECU são etapas
+  /// separadas de propósito: ferramentas como o AlfaOBD não fazem um
+  /// "wake-up" manual da ECU (o comando ATSI do ELM327 não é confiável para
+  /// isso) — elas simplesmente tentam ler PIDs depois de configurar o
+  /// adaptador, e é isso que [connectEcu] faz aqui.
+  Future<void> setupAdapter({EcuProtocol protocol = EcuProtocol.iso9141}) async {
     final setupSequence = protocol == EcuProtocol.kwp2000
         ? kElm327SetupKwp2000
         : kElm327SetupIso9141;
@@ -46,43 +50,45 @@ class Obd2Service {
       await btManager.sendCommand(command, timeout: timeout);
     }
     _last = _last.copyWith(btStatus: ConnectionStatus.connected);
+  }
 
-    try {
-      final response = await btManager.sendCommand(
-        kElm327WakeEcuCommand,
-        timeout: kWakeEcuTimeout,
-      );
-      // O ELM327 pode responder rápido com um texto de erro (ex.: "BUS
-      // INIT: ...ERROR", "UNABLE TO CONNECT") em vez de dar timeout — sem
-      // checar o conteúdo, isso seria lido como "ECU respondendo" mesmo
-      // com a ignição desligada.
-      final responded = !isElmFailureResponse(response);
-      _logSink?.call(
-        responded ? LogLevel.info : LogLevel.warn,
-        'obd2',
-        responded
-            ? 'ECU respondeu ao slow-init (ATSI)'
-            : 'ECU não respondeu ao slow-init (ignição desligada ou cabo solto?)',
-        raw: response,
-      );
-      _last = _last.copyWith(ecuResponding: responded);
-    } on BtCommandTimeoutException {
-      _logSink?.call(
-        LogLevel.warn,
-        'obd2',
-        'ECU não respondeu ao slow-init (timeout, ignição desligada ou cabo solto?)',
-      );
-      _last = _last.copyWith(ecuResponding: false);
+  /// Tenta ler os PIDs Marelli repetidamente até algum responder com
+  /// sucesso (ECU respondendo) ou até [timeout] esgotar. Chamar de novo é
+  /// seguro — não depende de estado de uma tentativa anterior.
+  Future<bool> connectEcu({
+    List<MarelliPid> pids = MarelliPid.dashboardLoop,
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      for (final pid in pids) {
+        if (await _readPid(pid)) {
+          _last = _last.copyWith(ecuResponding: true);
+          _dataController.add(_last);
+          return true;
+        }
+      }
     }
+    _logSink?.call(
+      LogLevel.warn,
+      'obd2',
+      'Nenhum PID respondeu em ${timeout.inSeconds}s (ignição desligada ou '
+          'header/checksum do PID incorreto para esta ECU?)',
+    );
+    _last = _last.copyWith(ecuResponding: false);
+    _dataController.add(_last);
+    return false;
   }
 
   /// Inicia o loop contínuo de leitura dos PIDs em [pids] (default:
   /// RPM/Velocidade/Temp do motor — Fase 2). Cada ciclo lê todos os PIDs em
-  /// sequência e emite um snapshot consolidado de [OBDDataModel].
+  /// sequência e emite um snapshot consolidado de [OBDDataModel]. Chamar
+  /// quando já está rodando não tem efeito (evita loops duplicados).
   Future<void> startLoop({
     List<MarelliPid> pids = MarelliPid.dashboardLoop,
     Duration cycleDelay = const Duration(milliseconds: 50),
   }) async {
+    if (_running) return;
     _running = true;
     while (_running) {
       var anyPidSucceeded = false;

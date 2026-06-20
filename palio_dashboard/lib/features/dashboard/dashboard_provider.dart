@@ -13,6 +13,14 @@ final dataSourceModeProvider = StateProvider<DataSourceMode>(
   (ref) => DataSourceMode.simulation,
 );
 
+/// Instância do [Obd2Service] da conexão live atual, para que a UI (botão
+/// "Conectar à ECU" no Dashboard) consiga acionar [Obd2Service.connectEcu]
+/// como uma etapa separada da conexão com o adaptador OBD2.
+final currentObd2ServiceProvider = StateProvider<Obd2Service?>((ref) => null);
+
+/// true enquanto o botão "Conectar à ECU" está aguardando resposta.
+final connectingEcuProvider = StateProvider<bool>((ref) => false);
+
 /// Emite um [OBDDataModel] a cada 100ms. Em modo simulação gera dados fake;
 /// em modo live, reconecta automaticamente ao último adaptador ELM327
 /// pareado (MAC salvo em SharedPreferences) e inicia o loop de PIDs.
@@ -44,7 +52,11 @@ Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
     btManager,
     logSink: ref.read(remoteLogServiceProvider).log,
   );
-  ref.onDispose(obd2Service.dispose);
+  ref.read(currentObd2ServiceProvider.notifier).state = obd2Service;
+  ref.onDispose(() {
+    ref.read(currentObd2ServiceProvider.notifier).state = null;
+    obd2Service.dispose();
+  });
 
   final lastAddress = await btManager.getLastAddress();
   if (lastAddress == null) {
@@ -58,7 +70,7 @@ Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
 
   try {
     await btManager.connect(lastAddress);
-    await obd2Service.initialize();
+    await obd2Service.setupAdapter();
   } catch (_) {
     yield OBDDataModel.empty().copyWith(
       btStatus: ConnectionStatus.disconnected,
@@ -66,6 +78,12 @@ Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
     return;
   }
 
-  unawaited(obd2Service.startLoop());
+  // Adaptador conectado — a conexão com a ECU é uma etapa separada,
+  // acionada pelo botão "Conectar à ECU" no Dashboard (chama
+  // Obd2Service.connectEcu via currentObd2ServiceProvider).
+  yield OBDDataModel.empty().copyWith(
+    btStatus: ConnectionStatus.connected,
+    ecuResponding: false,
+  );
   yield* obd2Service.dataStream;
 }

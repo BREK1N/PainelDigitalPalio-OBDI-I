@@ -53,8 +53,23 @@ final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
     return controller.stream;
   }
 
+  // O WebSocket do navegador não tem timeout próprio: se o celular não for
+  // alcançável (IP errado, fora da rede, servidor desligado), o socket pode
+  // ficar parado em "conectando" indefinidamente sem nunca disparar erro.
+  var settled = false;
+  final connectTimeout = Timer(const Duration(seconds: 8), () {
+    if (settled) return;
+    settled = true;
+    controller.add(
+      OBDDataModel.empty().copyWith(btStatus: ConnectionStatus.disconnected),
+    );
+    channel.sink.close();
+  });
+
   final subscription = channel.stream.listen(
     (message) {
+      settled = true;
+      connectTimeout.cancel();
       try {
         final json = jsonDecode(message as String) as Map<String, dynamic>;
         controller.add(OBDDataModel.fromJson(json));
@@ -63,6 +78,8 @@ final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
       }
     },
     onError: (_) {
+      settled = true;
+      connectTimeout.cancel();
       controller.add(
         OBDDataModel.empty().copyWith(
           btStatus: ConnectionStatus.disconnected,
@@ -70,6 +87,8 @@ final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
       );
     },
     onDone: () {
+      settled = true;
+      connectTimeout.cancel();
       controller.add(
         OBDDataModel.empty().copyWith(
           btStatus: ConnectionStatus.disconnected,
@@ -79,6 +98,7 @@ final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
   );
 
   ref.onDispose(() {
+    connectTimeout.cancel();
     subscription.cancel();
     channel.sink.close();
     controller.close();

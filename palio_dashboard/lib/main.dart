@@ -22,6 +22,13 @@ import 'shared/theme/app_theme.dart';
 bool get _isPcViewerPlatform =>
     kIsWeb || defaultTargetPlatform != TargetPlatform.android;
 
+/// O plugin do Firebase só tem configuração gerada (firebase_options.dart)
+/// para Android e Web — Windows/Linux/macOS não são suportados pelo
+/// cloud_firestore. Por isso o relé em nuvem (CloudRelayService) só está
+/// disponível no PC Viewer quando ele roda no navegador.
+bool get _supportsFirebase =>
+    kIsWeb || defaultTargetPlatform == TargetPlatform.android;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -45,13 +52,15 @@ Future<void> main() async {
 
   await runZonedGuarded<Future<void>>(
     () async {
-      // O log remoto é só para o app veicular Android — o PC Viewer não
-      // toca em Bluetooth/OBD2, então não há nada relevante para logar.
-      if (!_isPcViewerPlatform) {
+      if (_supportsFirebase) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
+      }
 
+      // O log remoto é só para o app veicular Android — o PC Viewer não
+      // toca em Bluetooth/OBD2, então não há nada relevante para logar.
+      if (!_isPcViewerPlatform) {
         final packageInfo = await PackageInfo.fromPlatform();
         final deviceDescription = await describeDevice();
         await remoteLogService.start(

@@ -15,5 +15,16 @@ service cloud.firestore {
         allow read, update, delete: if false;
       }
     }
+
+    // Relé de dados em tempo real entre o celular e o PC Viewer quando os
+    // dois não estão na mesma rede local (WebSocket não funciona nesse
+    // caso). O código do documento é um PIN curto gerado no celular e
+    // digitado no PC — qualquer usuário autenticado (anônimo) pode ler ou
+    // escrever, já que não há dado sensível (apenas telemetria do carro) e
+    // o PIN não é listável.
+    match /live_sessions/{code} {
+      allow read, create, update: if request.auth != null;
+      allow delete: if false;
+    }
   }
 }

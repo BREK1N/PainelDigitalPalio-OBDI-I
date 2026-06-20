@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/bluetooth/bt_device_model.dart';
+import '../../core/cloud/cloud_relay_service.dart';
 import '../../core/diagnostics/diagnostics_provider.dart';
 import '../../core/obd2/obd2_service.dart';
 import '../../core/ota/ota_dialog.dart';
@@ -65,6 +66,7 @@ class SettingsScreen extends ConsumerWidget {
     final speedUnit = ref.watch(speedUnitProvider);
     final dataSourceMode = ref.watch(dataSourceModeProvider);
     final connectingAddress = ref.watch(connectingAddressProvider);
+    final cloudCode = ref.watch(cloudRelayCodeProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -155,6 +157,41 @@ class SettingsScreen extends ConsumerWidget {
                     await server.stop();
                   }
                   ref.read(wsServerRunningProvider.notifier).state = value;
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Relé em nuvem (celular e PC em redes diferentes)',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: AppTheme.surface,
+            child: ListTile(
+              title: Text(
+                cloudCode ?? 'Desativado',
+                style: AppTheme.digitalDisplay(fontSize: 16),
+              ),
+              subtitle: const Text(
+                'Gere um código e digite-o no PC Dashboard, sem precisar '
+                'estar na mesma rede Wi-Fi',
+                style: TextStyle(color: Colors.white54),
+              ),
+              trailing: Switch(
+                value: cloudCode != null,
+                activeThumbColor: AppTheme.accent,
+                onChanged: (value) async {
+                  final relay = ref.read(cloudRelayServiceProvider);
+                  if (value) {
+                    final code = CloudRelayService.generateCode();
+                    await relay.startPublishing(code);
+                    ref.read(cloudRelayCodeProvider.notifier).state = code;
+                  } else {
+                    relay.stopPublishing();
+                    ref.read(cloudRelayCodeProvider.notifier).state = null;
+                  }
                 },
               ),
             ),

@@ -4,9 +4,10 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../../core/cloud/cloud_relay_service.dart';
 import '../../shared/models/obd_data_model.dart';
 
-enum PcDataSourceMode { simulation, live }
+enum PcDataSourceMode { simulation, live, cloud }
 
 final pcModeProvider = StateProvider<PcDataSourceMode>(
   (ref) => PcDataSourceMode.simulation,
@@ -15,7 +16,16 @@ final pcModeProvider = StateProvider<PcDataSourceMode>(
 /// Endereço ws:// digitado pelo usuário (IP do celular exibido em Settings).
 final pcWsAddressProvider = StateProvider<String>((ref) => '');
 
-/// Incrementado para forçar reconexão ao endereço atual.
+/// PIN da sessão de relé em nuvem digitado pelo usuário (gerado no celular).
+final pcCloudCodeProvider = StateProvider<String>((ref) => '');
+
+final cloudRelayServiceProvider = Provider<CloudRelayService>((ref) {
+  final service = CloudRelayService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Incrementado para forçar reconexão ao endereço/código atual.
 final pcReconnectTokenProvider = StateProvider<int>((ref) => 0);
 
 final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
@@ -30,6 +40,17 @@ final pcObdDataProvider = StreamProvider.autoDispose<OBDDataModel>((ref) {
   }
 
   ref.watch(pcReconnectTokenProvider);
+
+  if (mode == PcDataSourceMode.cloud) {
+    final code = ref.watch(pcCloudCodeProvider);
+    if (code.isEmpty) {
+      return Stream.value(
+        OBDDataModel.empty().copyWith(btStatus: ConnectionStatus.disconnected),
+      );
+    }
+    return ref.read(cloudRelayServiceProvider).subscribe(code);
+  }
+
   final address = ref.watch(pcWsAddressProvider);
   if (address.isEmpty) {
     return Stream.value(

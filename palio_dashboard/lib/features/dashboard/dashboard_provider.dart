@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/diagnostics/diagnostics_provider.dart';
+import '../../core/diagnostics/remote_log_service.dart';
 import '../../core/obd2/obd2_service.dart';
 import '../../shared/models/obd_data_model.dart';
 import '../settings/settings_provider.dart';
@@ -33,6 +34,10 @@ final obdDataProvider = StreamProvider<OBDDataModel>((ref) {
   return source.map((data) {
     if (ref.read(wsServerRunningProvider)) {
       ref.read(wsServerProvider).broadcast(data);
+    }
+    final cloudCode = ref.read(cloudRelayCodeProvider);
+    if (cloudCode != null) {
+      ref.read(cloudRelayServiceProvider).update(data);
     }
     return data;
   });
@@ -69,9 +74,21 @@ Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
   yield OBDDataModel.empty().copyWith(btStatus: ConnectionStatus.connecting);
 
   try {
-    await btManager.connect(lastAddress);
+    // Se a tela de Configurações já testou e deixou conectado ao mesmo
+    // endereço, não desconecta e reconecta de novo aqui — em adaptadores
+    // ELM327 mais baratos, reconectar imediatamente após desconectar pode
+    // falhar ou ficar pendurado, deixando o Dashboard sem nunca chegar a
+    // "conectado" mesmo com o OBD2 funcionando.
+    if (!btManager.isConnected) {
+      await btManager.connect(lastAddress);
+    }
     await obd2Service.setupAdapter();
-  } catch (_) {
+  } catch (e) {
+    ref.read(remoteLogServiceProvider).log(
+      LogLevel.error,
+      'dashboard',
+      'Falha ao conectar/configurar o adaptador OBD2: $e',
+    );
     yield OBDDataModel.empty().copyWith(
       btStatus: ConnectionStatus.disconnected,
     );

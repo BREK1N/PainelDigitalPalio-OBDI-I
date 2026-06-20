@@ -19,10 +19,12 @@ class PcDashboardScreen extends ConsumerStatefulWidget {
 
 class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
   final _addressController = TextEditingController();
+  final _codeController = TextEditingController();
 
   @override
   void dispose() {
     _addressController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -38,7 +40,8 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
         backgroundColor: AppTheme.surface,
         title: const Text('PalioDash — PC Viewer'),
         actions: [
-          if (mode == PcDataSourceMode.live) ...[
+          if (mode == PcDataSourceMode.live ||
+              mode == PcDataSourceMode.cloud) ...[
             _buildStatusBadge(data.btStatus),
             _buildEcuBadge(data.ecuResponding),
           ],
@@ -55,7 +58,11 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
                 ),
                 DropdownMenuItem(
                   value: PcDataSourceMode.live,
-                  child: Text('WebSocket (celular)'),
+                  child: Text('WebSocket (mesma rede)'),
+                ),
+                DropdownMenuItem(
+                  value: PcDataSourceMode.cloud,
+                  child: Text('Nuvem (redes diferentes)'),
                 ),
               ],
               onChanged: (value) {
@@ -70,6 +77,7 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
       body: Column(
         children: [
           if (mode == PcDataSourceMode.live) _buildAddressBar(),
+          if (mode == PcDataSourceMode.cloud) _buildCodeBar(),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(8.0),
@@ -185,6 +193,37 @@ class _PcDashboardScreenState extends ConsumerState<PcDashboardScreen> {
             onPressed: () {
               ref.read(pcWsAddressProvider.notifier).state =
                   _addressController.text.trim();
+              ref.read(pcReconnectTokenProvider.notifier).state++;
+            },
+            child: const Text('Conectar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCodeBar() {
+    return Container(
+      color: AppTheme.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _codeController,
+              style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                hintText: 'Código exibido nas Configurações do celular',
+                hintStyle: TextStyle(color: Colors.white38),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              ref.read(pcCloudCodeProvider.notifier).state =
+                  _codeController.text.trim();
               ref.read(pcReconnectTokenProvider.notifier).state++;
             },
             child: const Text('Conectar'),

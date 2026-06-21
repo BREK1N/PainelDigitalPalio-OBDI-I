@@ -22,11 +22,20 @@ final currentObd2ServiceProvider = StateProvider<Obd2Service?>((ref) => null);
 /// true enquanto o botão "Conectar à ECU" está aguardando resposta.
 final connectingEcuProvider = StateProvider<bool>((ref) => false);
 
+/// Incrementado pela tela de Configurações sempre que o usuário tenta
+/// conectar a um dispositivo, para forçar `_liveObdStream` a reiniciar do
+/// zero mesmo quando [dataSourceModeProvider] já estava em `live` (uma
+/// segunda tentativa de conexão na mesma sessão não muda esse valor, então
+/// sem este token o Riverpod não reconstruiria o stream e o Dashboard
+/// ficaria preso no estado da tentativa anterior).
+final obdReconnectTokenProvider = StateProvider<int>((ref) => 0);
+
 /// Emite um [OBDDataModel] a cada 100ms. Em modo simulação gera dados fake;
 /// em modo live, reconecta automaticamente ao último adaptador ELM327
 /// pareado (MAC salvo em SharedPreferences) e inicia o loop de PIDs.
 final obdDataProvider = StreamProvider<OBDDataModel>((ref) {
   final mode = ref.watch(dataSourceModeProvider);
+  ref.watch(obdReconnectTokenProvider);
   final source = mode == DataSourceMode.live
       ? _liveObdStream(ref)
       : _simulatedObdStream();

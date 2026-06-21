@@ -34,6 +34,7 @@ Future<void> _connectToDevice(
     await obd2Service.dispose();
 
     ref.read(dataSourceModeProvider.notifier).state = DataSourceMode.live;
+    ref.read(obdReconnectTokenProvider.notifier).state++;
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

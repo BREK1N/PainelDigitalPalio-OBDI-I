@@ -111,6 +111,7 @@ class Obd2Service {
     List<StandardObd2Pid> pids = StandardObd2Pid.dashboardLoop,
     Duration timeout = const Duration(seconds: 5),
   }) async {
+    await _logSupportedStandardPids();
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       if (await _runStandardCycle(pids)) {
@@ -137,7 +138,7 @@ class Obd2Service {
   /// que já se sabe que falham neste carro. Retorna a camada que
   /// respondeu, ou null se nenhuma respondeu.
   Future<EcuProtocol?> connectEcuAutoDetect({
-    Duration perLayerTimeout = const Duration(seconds: 8),
+    Duration perLayerTimeout = const Duration(seconds: 14),
     bool rememberSuccess = true,
   }) async {
     const order = [
@@ -271,6 +272,46 @@ class Obd2Service {
     } on BtCommandTimeoutException {
       // ECU não respondeu a este PID neste ciclo — já logado pelo BtManager.
       return false;
+    }
+  }
+
+  /// Consulta o PID $00 (PIDs suportados $01-$20) e loga o resultado — só
+  /// para diagnóstico remoto, não muda o que é lido. Útil para descobrir
+  /// se a ECU sequer expõe RPM/velocidade/temperatura em modo $01: uma
+  /// resposta negativa "7F 01 .." aos PIDs do dashboard, mas válida aqui,
+  /// indicaria que a ECU fala OBD-II padrão mas não tem esses PIDs
+  /// específicos implementados.
+  Future<void> _logSupportedStandardPids() async {
+    try {
+      final raw = await btManager.sendCommand('01 00');
+      final parsed = parseStandardObd2Response(raw, expectedPid: 0x00);
+      if (parsed == null || parsed.dataBytes.length < 4) {
+        _logSink?.call(
+          LogLevel.warn,
+          'obd2',
+          'PID 01 00 (PIDs suportados) não respondeu de forma válida',
+          raw: raw,
+        );
+        return;
+      }
+      final b = parsed.dataBytes;
+      final bitmap = (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3];
+      final supported = [
+        for (var i = 0; i < 32; i++)
+          if (bitmap & (1 << (31 - i)) != 0) i + 1,
+      ];
+      _logSink?.call(
+        LogLevel.info,
+        'obd2',
+        'PIDs OBD-II padrão suportados pela ECU: '
+            '${supported.map((p) => '0x${p.toRadixString(16).padLeft(2, '0').toUpperCase()}').join(', ')}',
+      );
+    } on BtCommandTimeoutException {
+      _logSink?.call(
+        LogLevel.warn,
+        'obd2',
+        'PID 01 00 (PIDs suportados) deu timeout',
+      );
     }
   }
 

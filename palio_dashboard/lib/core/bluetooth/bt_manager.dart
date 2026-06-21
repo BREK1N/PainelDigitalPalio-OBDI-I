@@ -34,14 +34,14 @@ class BtManager {
   static const String _lastAddressKey = 'bt_last_device_address';
 
   // ATST96 (enviado na configuração do adaptador) define o timeout interno
-  // do próprio ELM327 para aguardar a ECU em 0x96 * 4ms = 600ms. Esse
-  // timeout do lado Dart tem que ser MAIOR que isso — se for menor (como
-  // eram os 300ms antigos), o app desiste e manda o próximo comando
-  // enquanto o ELM327 ainda está no meio de uma tentativa de comunicação
-  // com a ECU, interrompendo-a (o adaptador responde "STOPPED" à tentativa
-  // anterior, atribuído por engano à próxima leitura). Por isso fica bem
-  // acima de 600ms, com margem para a latência do próprio Bluetooth.
-  static const Duration defaultTimeout = Duration(milliseconds: 1000);
+  // do próprio ELM327 para aguardar a ECU em 0x96 * 4ms = 600ms — mas isso
+  // só cobre a espera pela resposta DEPOIS do barramento já inicializado.
+  // O primeiro comando de cada protocolo costuma disparar um handshake de
+  // inicialização (5-baud slow init, etc.) que pode levar bem mais que
+  // isso. Logs reais de carro mostraram "STOPPED" mesmo com 1000ms — sinal
+  // de que o app ainda mandava o próximo comando enquanto o adaptador
+  // seguia no meio de uma tentativa anterior. Por isso a margem é generosa.
+  static const Duration defaultTimeout = Duration(milliseconds: 2000);
 
   BtManager({LogSink? logSink}) : _logSink = logSink;
 

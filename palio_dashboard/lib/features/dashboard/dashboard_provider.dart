@@ -82,7 +82,7 @@ Stream<OBDDataModel> _liveObdStream(Ref ref) async* {
     if (!btManager.isConnected) {
       await btManager.connect(lastAddress);
     }
-    await obd2Service.setupAdapter();
+    await obd2Service.setupAdapter(protocol: EcuProtocol.obd2Standard);
   } catch (e) {
     ref.read(remoteLogServiceProvider).log(
       LogLevel.error,

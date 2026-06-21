@@ -30,7 +30,7 @@ Future<void> _connectToDevice(
       btManager,
       logSink: ref.read(remoteLogServiceProvider).log,
     );
-    await obd2Service.setupAdapter();
+    await obd2Service.setupAdapter(protocol: EcuProtocol.obd2Standard);
     await obd2Service.dispose();
 
     ref.read(dataSourceModeProvider.notifier).state = DataSourceMode.live;

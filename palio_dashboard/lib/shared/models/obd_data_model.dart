@@ -23,6 +23,13 @@ class OBDDataModel {
   /// que só reflete se o adaptador ELM327 está conectado via Bluetooth.
   final bool ecuResponding;
 
+  /// Qual camada de protocolo respondeu ('OBD-II padrão', 'KWP2000',
+  /// 'ISO9141-2'), ou null se a ECU ainda não respondeu em nenhuma. Apenas
+  /// para exibição — a lógica de conexão em si vive em EcuProtocol
+  /// (core/obd2), não importado aqui de propósito para manter a separação
+  /// de camadas.
+  final String? ecuProtocolLabel;
+
   const OBDDataModel({
     required this.rpm,
     required this.speedKmh,
@@ -39,6 +46,7 @@ class OBDDataModel {
     required this.engineRunning,
     required this.btStatus,
     required this.ecuResponding,
+    this.ecuProtocolLabel,
   });
 
   OBDDataModel copyWith({
@@ -57,6 +65,7 @@ class OBDDataModel {
     bool? engineRunning,
     ConnectionStatus? btStatus,
     bool? ecuResponding,
+    String? ecuProtocolLabel,
   }) {
     return OBDDataModel(
       rpm: rpm ?? this.rpm,
@@ -74,6 +83,7 @@ class OBDDataModel {
       engineRunning: engineRunning ?? this.engineRunning,
       btStatus: btStatus ?? this.btStatus,
       ecuResponding: ecuResponding ?? this.ecuResponding,
+      ecuProtocolLabel: ecuProtocolLabel ?? this.ecuProtocolLabel,
     );
   }
 
@@ -93,6 +103,7 @@ class OBDDataModel {
         'engineRunning': engineRunning,
         'btStatus': btStatus.name,
         'ecuResponding': ecuResponding,
+        'ecuProtocolLabel': ecuProtocolLabel,
       };
 
   factory OBDDataModel.fromJson(Map<String, dynamic> json) => OBDDataModel(
@@ -111,6 +122,7 @@ class OBDDataModel {
         engineRunning: json['engineRunning'] as bool,
         btStatus: ConnectionStatus.values.byName(json['btStatus'] as String),
         ecuResponding: json['ecuResponding'] as bool? ?? false,
+        ecuProtocolLabel: json['ecuProtocolLabel'] as String?,
       );
 
   factory OBDDataModel.empty() => OBDDataModel(

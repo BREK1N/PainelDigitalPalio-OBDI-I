@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/obd2/obd2_service.dart';
 import '../../shared/models/obd_data_model.dart';
 import '../../shared/settings/app_settings_provider.dart';
 import '../../shared/theme/app_theme.dart';
@@ -23,17 +24,18 @@ Future<void> _connectEcu(BuildContext context, WidgetRef ref) async {
 
   ref.read(connectingEcuProvider.notifier).state = true;
   try {
-    final ok = await service.connectEcu();
-    if (ok) {
+    final protocol = await service.connectEcuAutoDetect();
+    if (protocol != null) {
       unawaited(service.startLoop());
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ok
-                ? 'ECU respondendo'
-                : 'ECU não respondeu (verifique a ignição)',
+            protocol != null
+                ? 'ECU conectada via ${protocol.displayLabel}'
+                : 'ECU não respondeu em nenhum protocolo (verifique a '
+                    'ignição)',
           ),
         ),
       );
@@ -148,6 +150,14 @@ class DashboardScreen extends ConsumerWidget {
                                   ),
                                 ],
                               ),
+                              if (data.ecuProtocolLabel != null)
+                                Text(
+                                  data.ecuProtocolLabel!,
+                                  style: const TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 10,
+                                  ),
+                                ),
                               if (canConnectEcu)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),

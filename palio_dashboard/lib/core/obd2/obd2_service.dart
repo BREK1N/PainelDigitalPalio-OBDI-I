@@ -1,24 +1,43 @@
 import 'dart:async';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../shared/models/obd_data_model.dart';
 import '../bluetooth/bt_manager.dart';
 import '../diagnostics/remote_log_service.dart';
 import 'marelli_protocol.dart';
 import 'pid_definitions.dart';
+import 'standard_obd2_pid_definitions.dart';
+import 'standard_obd2_protocol.dart';
 
-enum EcuProtocol { iso9141, kwp2000 }
+/// Camadas de protocolo tentadas, em ordem, por [Obd2Service.connectEcuAutoDetect].
+enum EcuProtocol { obd2Standard, kwp2000, iso9141 }
 
-/// Orquestra a inicialização do ELM327 e o loop de leitura de PIDs Marelli,
-/// emitindo snapshots de [OBDDataModel] conforme os dados chegam.
+extension EcuProtocolLabel on EcuProtocol {
+  String get displayLabel => switch (this) {
+    EcuProtocol.obd2Standard => 'OBD-II padrão',
+    EcuProtocol.kwp2000 => 'KWP2000',
+    EcuProtocol.iso9141 => 'ISO9141-2',
+  };
+}
+
+/// Orquestra a inicialização do ELM327 e o loop de leitura de PIDs,
+/// emitindo snapshots de [OBDDataModel] conforme os dados chegam. Suporta
+/// três camadas de protocolo para falar com a ECU (ver [EcuProtocol]) —
+/// nenhum carro precisa de todas, mas qual delas funciona varia por
+/// modelo/ano de ECU, e a forma confiável de descobrir é tentar em ordem.
 class Obd2Service {
   final BtManager btManager;
   final LogSink? _logSink;
 
   Obd2Service(this.btManager, {LogSink? logSink}) : _logSink = logSink;
 
+  static const _lastLayerKey = 'obd2_last_ecu_protocol';
+
   /// PIDs cuja última leitura falhou — evita logar a mesma falha a cada
   /// ciclo (50ms) enquanto o problema persiste.
   final Set<MarelliPid> _loggedFailures = {};
+  final Set<StandardObd2Pid> _loggedStandardFailures = {};
 
   final StreamController<OBDDataModel> _dataController =
       StreamController<OBDDataModel>.broadcast();
@@ -29,73 +48,177 @@ class Obd2Service {
 
   bool _running = false;
 
+  EcuProtocol? _activeLayer;
+
+  /// Camada de protocolo que respondeu na última conexão bem-sucedida, ou
+  /// null se nenhuma conexão com a ECU foi estabelecida ainda.
+  EcuProtocol? get activeProtocol => _activeLayer;
+
   bool get lastEcuResponding => _last.ecuResponding;
 
   bool get isLoopRunning => _running;
 
-  /// Configura apenas o ELM327 (ATZ/ATE0/.../ATST96) — não tenta falar com a
-  /// ECU do carro. Lança [BtCommandTimeoutException] se o próprio chip não
-  /// responder à configuração, indicando problema no adaptador/Bluetooth,
-  /// não na ECU. Conectar ao adaptador e conectar à ECU são etapas
-  /// separadas de propósito: ferramentas como o AlfaOBD não fazem um
-  /// "wake-up" manual da ECU (o comando ATSI do ELM327 não é confiável para
-  /// isso) — elas simplesmente tentam ler PIDs depois de configurar o
-  /// adaptador, e é isso que [connectEcu] faz aqui.
-  Future<void> setupAdapter({EcuProtocol protocol = EcuProtocol.iso9141}) async {
-    final setupSequence = protocol == EcuProtocol.kwp2000
-        ? kElm327SetupKwp2000
-        : kElm327SetupIso9141;
+  /// Configura apenas o ELM327 (ATZ/ATE0/.../ATST96) para a camada de
+  /// protocolo [protocol] — não tenta falar com a ECU do carro. Lança
+  /// [BtCommandTimeoutException] se o próprio chip não responder à
+  /// configuração, indicando problema no adaptador/Bluetooth, não na ECU.
+  Future<void> setupAdapter({
+    EcuProtocol protocol = EcuProtocol.iso9141,
+  }) async {
+    final setupSequence = switch (protocol) {
+      EcuProtocol.obd2Standard => kElm327SetupObd2Standard,
+      EcuProtocol.kwp2000 => kElm327SetupKwp2000,
+      EcuProtocol.iso9141 => kElm327SetupIso9141,
+    };
     for (final command in setupSequence) {
-      final timeout = command == 'ATZ' ? kAtzTimeout : BtManager.defaultTimeout;
+      final timeout = command == 'ATZ'
+          ? kAtzTimeout
+          : BtManager.defaultTimeout;
       await btManager.sendCommand(command, timeout: timeout);
     }
     _last = _last.copyWith(btStatus: ConnectionStatus.connected);
   }
 
   /// Tenta ler os PIDs Marelli repetidamente até algum responder com
-  /// sucesso (ECU respondendo) ou até [timeout] esgotar. Chamar de novo é
-  /// seguro — não depende de estado de uma tentativa anterior.
+  /// sucesso (ECU respondendo) ou até [timeout] esgotar. Assume que
+  /// [setupAdapter] já configurou o ELM327 para KWP2000 ou ISO9141-2.
   Future<bool> connectEcu({
     List<MarelliPid> pids = MarelliPid.dashboardLoop,
     Duration timeout = const Duration(seconds: 10),
   }) async {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
-      for (final pid in pids) {
-        if (await _readPid(pid)) {
-          _last = _last.copyWith(ecuResponding: true);
-          _dataController.add(_last);
-          return true;
-        }
+      if (await _runMarelliCycle(pids)) {
+        _last = _last.copyWith(ecuResponding: true);
+        _dataController.add(_last);
+        return true;
       }
     }
     _logSink?.call(
       LogLevel.warn,
       'obd2',
-      'Nenhum PID respondeu em ${timeout.inSeconds}s (ignição desligada ou '
-          'header/checksum do PID incorreto para esta ECU?)',
+      'Nenhum PID Marelli respondeu em ${timeout.inSeconds}s',
     );
     _last = _last.copyWith(ecuResponding: false);
     _dataController.add(_last);
     return false;
   }
 
-  /// Inicia o loop contínuo de leitura dos PIDs em [pids] (default:
-  /// RPM/Velocidade/Temp do motor — Fase 2). Cada ciclo lê todos os PIDs em
-  /// sequência e emite um snapshot consolidado de [OBDDataModel]. Chamar
-  /// quando já está rodando não tem efeito (evita loops duplicados).
+  /// Equivalente a [connectEcu], mas usando PIDs OBD-II padrão (modo $01)
+  /// em vez do protocolo proprietário Marelli. Assume que [setupAdapter]
+  /// já configurou o ELM327 com `ATSP0` (auto-detect).
+  Future<bool> connectStandardObd2({
+    List<StandardObd2Pid> pids = StandardObd2Pid.dashboardLoop,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (await _runStandardCycle(pids)) {
+        _last = _last.copyWith(ecuResponding: true);
+        _dataController.add(_last);
+        return true;
+      }
+    }
+    _logSink?.call(
+      LogLevel.warn,
+      'obd2',
+      'Nenhum PID OBD-II padrão respondeu em ${timeout.inSeconds}s',
+    );
+    _last = _last.copyWith(ecuResponding: false);
+    _dataController.add(_last);
+    return false;
+  }
+
+  /// Tenta conectar à ECU percorrendo as camadas de protocolo em ordem:
+  /// OBD-II padrão (mais simples e confiável quando o carro suporta) →
+  /// Marelli proprietário via KWP2000 → Marelli proprietário via
+  /// ISO9141-2. Lembra qual camada respondeu (SharedPreferences) e tenta
+  /// essa primeiro nas próximas conexões, evitando repetir as tentativas
+  /// que já se sabe que falham neste carro. Retorna a camada que
+  /// respondeu, ou null se nenhuma respondeu.
+  Future<EcuProtocol?> connectEcuAutoDetect({
+    Duration perLayerTimeout = const Duration(seconds: 5),
+    bool rememberSuccess = true,
+  }) async {
+    const order = [
+      EcuProtocol.obd2Standard,
+      EcuProtocol.kwp2000,
+      EcuProtocol.iso9141,
+    ];
+    final remembered = rememberSuccess ? await _loadLastLayer() : null;
+    final tryOrder = remembered == null
+        ? order
+        : [remembered, ...order.where((p) => p != remembered)];
+
+    for (final protocol in tryOrder) {
+      _logSink?.call(
+        LogLevel.info,
+        'obd2',
+        'Tentando ECU via ${protocol.displayLabel}...',
+      );
+      try {
+        await setupAdapter(protocol: protocol);
+      } catch (e) {
+        _logSink?.call(
+          LogLevel.error,
+          'obd2',
+          'Falha ao configurar adaptador para ${protocol.displayLabel}: $e',
+        );
+        continue;
+      }
+      final ok = protocol == EcuProtocol.obd2Standard
+          ? await connectStandardObd2(timeout: perLayerTimeout)
+          : await connectEcu(timeout: perLayerTimeout);
+      if (ok) {
+        _activeLayer = protocol;
+        _last = _last.copyWith(ecuProtocolLabel: protocol.displayLabel);
+        _dataController.add(_last);
+        _logSink?.call(
+          LogLevel.info,
+          'obd2',
+          'ECU conectada via ${protocol.displayLabel}',
+        );
+        if (rememberSuccess) await _saveLastLayer(protocol);
+        return protocol;
+      }
+      _logSink?.call(
+        LogLevel.warn,
+        'obd2',
+        '${protocol.displayLabel} falhou, tentando próxima camada...',
+      );
+    }
+    _activeLayer = null;
+    _logSink?.call(LogLevel.error, 'obd2', 'Nenhuma camada de protocolo respondeu');
+    return null;
+  }
+
+  Future<EcuProtocol?> _loadLastLayer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString(_lastLayerKey);
+    if (name == null) return null;
+    return EcuProtocol.values.asNameMap()[name];
+  }
+
+  Future<void> _saveLastLayer(EcuProtocol protocol) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastLayerKey, protocol.name);
+  }
+
+  /// Inicia o loop contínuo de leitura dos PIDs da camada de protocolo
+  /// ativa ([activeProtocol], definida por uma conexão bem-sucedida via
+  /// [connectEcu]/[connectStandardObd2]/[connectEcuAutoDetect]). Cada ciclo
+  /// lê todos os PIDs em sequência e emite um snapshot consolidado de
+  /// [OBDDataModel]. Chamar quando já está rodando não tem efeito (evita
+  /// loops duplicados).
   Future<void> startLoop({
-    List<MarelliPid> pids = MarelliPid.dashboardLoop,
     Duration cycleDelay = const Duration(milliseconds: 50),
   }) async {
     if (_running) return;
     _running = true;
     while (_running) {
-      var anyPidSucceeded = false;
-      for (final pid in pids) {
-        if (!_running) break;
-        if (await _readPid(pid)) anyPidSucceeded = true;
-      }
+      final anyPidSucceeded = _activeLayer == EcuProtocol.obd2Standard
+          ? await _runStandardCycle(StandardObd2Pid.dashboardLoop)
+          : await _runMarelliCycle(MarelliPid.dashboardLoop);
       _last = _last.copyWith(ecuResponding: anyPidSucceeded);
       _dataController.add(_last);
       await Future.delayed(cycleDelay);
@@ -106,7 +229,26 @@ class Obd2Service {
     _running = false;
   }
 
-  /// Retorna true se o PID foi lido e parseado com sucesso neste ciclo.
+  /// Lê todos os [pids] Marelli uma vez; retorna true se algum respondeu.
+  Future<bool> _runMarelliCycle(List<MarelliPid> pids) async {
+    var anySucceeded = false;
+    for (final pid in pids) {
+      if (await _readPid(pid)) anySucceeded = true;
+    }
+    return anySucceeded;
+  }
+
+  /// Lê todos os [pids] OBD-II padrão uma vez; retorna true se algum
+  /// respondeu.
+  Future<bool> _runStandardCycle(List<StandardObd2Pid> pids) async {
+    var anySucceeded = false;
+    for (final pid in pids) {
+      if (await _readStandardPid(pid)) anySucceeded = true;
+    }
+    return anySucceeded;
+  }
+
+  /// Retorna true se o PID Marelli foi lido e parseado com sucesso.
   Future<bool> _readPid(MarelliPid pid) async {
     try {
       final raw = await btManager.sendCommand(pid.command);
@@ -116,7 +258,7 @@ class Obd2Service {
           _logSink?.call(
             LogLevel.warn,
             'obd2',
-            'Falha ao parsear resposta do PID ${pid.name}',
+            'Falha ao parsear resposta do PID Marelli ${pid.name}',
             raw: raw,
           );
         }
@@ -128,6 +270,31 @@ class Obd2Service {
       return true;
     } on BtCommandTimeoutException {
       // ECU não respondeu a este PID neste ciclo — já logado pelo BtManager.
+      return false;
+    }
+  }
+
+  /// Retorna true se o PID OBD-II padrão foi lido e parseado com sucesso.
+  Future<bool> _readStandardPid(StandardObd2Pid pid) async {
+    try {
+      final raw = await btManager.sendCommand(pid.command);
+      final parsed = parseStandardObd2Response(raw, expectedPid: pid.pidByte);
+      if (parsed == null) {
+        if (_loggedStandardFailures.add(pid)) {
+          _logSink?.call(
+            LogLevel.warn,
+            'obd2',
+            'Falha ao parsear resposta do PID padrão ${pid.name}',
+            raw: raw,
+          );
+        }
+        return false;
+      }
+      _loggedStandardFailures.remove(pid);
+      final value = pid.formula(parsed.dataBytes);
+      _last = _applyStandardPidValue(pid, value);
+      return true;
+    } on BtCommandTimeoutException {
       return false;
     }
   }
@@ -154,6 +321,17 @@ class Obd2Service {
         return _last.copyWith(ignitionDeg: value, timestamp: DateTime.now());
       case MarelliPid.batteryVoltage:
         return _last.copyWith(batteryV: value, timestamp: DateTime.now());
+    }
+  }
+
+  OBDDataModel _applyStandardPidValue(StandardObd2Pid pid, double value) {
+    switch (pid) {
+      case StandardObd2Pid.rpm:
+        return _last.copyWith(rpm: value, timestamp: DateTime.now());
+      case StandardObd2Pid.speed:
+        return _last.copyWith(speedKmh: value, timestamp: DateTime.now());
+      case StandardObd2Pid.coolantTemp:
+        return _last.copyWith(coolantTempC: value, timestamp: DateTime.now());
     }
   }
 

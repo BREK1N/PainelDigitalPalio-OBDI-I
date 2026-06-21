@@ -11,19 +11,23 @@ import 'standard_obd2_pid_definitions.dart';
 import 'standard_obd2_protocol.dart';
 
 /// Camadas de protocolo tentadas, em ordem, por [Obd2Service.connectEcuAutoDetect].
-enum EcuProtocol { obd2Standard, kwp2000, iso9141 }
+/// [kwp2000FastInit] e [kwp2000SlowInit] diferem só no handshake de
+/// inicialização do ELM327 (ATSP5 vs ATSP4) — algumas ECUs Marelli só
+/// aceitam um dos dois.
+enum EcuProtocol { obd2Standard, kwp2000FastInit, kwp2000SlowInit, iso9141 }
 
 extension EcuProtocolLabel on EcuProtocol {
   String get displayLabel => switch (this) {
     EcuProtocol.obd2Standard => 'OBD-II padrão',
-    EcuProtocol.kwp2000 => 'KWP2000',
+    EcuProtocol.kwp2000FastInit => 'KWP2000 (fast init)',
+    EcuProtocol.kwp2000SlowInit => 'KWP2000 (slow init)',
     EcuProtocol.iso9141 => 'ISO9141-2',
   };
 }
 
 /// Orquestra a inicialização do ELM327 e o loop de leitura de PIDs,
 /// emitindo snapshots de [OBDDataModel] conforme os dados chegam. Suporta
-/// três camadas de protocolo para falar com a ECU (ver [EcuProtocol]) —
+/// quatro camadas de protocolo para falar com a ECU (ver [EcuProtocol]) —
 /// nenhum carro precisa de todas, mas qual delas funciona varia por
 /// modelo/ano de ECU, e a forma confiável de descobrir é tentar em ordem.
 class Obd2Service {
@@ -67,7 +71,8 @@ class Obd2Service {
   }) async {
     final setupSequence = switch (protocol) {
       EcuProtocol.obd2Standard => kElm327SetupObd2Standard,
-      EcuProtocol.kwp2000 => kElm327SetupKwp2000,
+      EcuProtocol.kwp2000FastInit => kElm327SetupKwp2000FastInit,
+      EcuProtocol.kwp2000SlowInit => kElm327SetupKwp2000SlowInit,
       EcuProtocol.iso9141 => kElm327SetupIso9141,
     };
     for (final command in setupSequence) {
@@ -132,18 +137,19 @@ class Obd2Service {
 
   /// Tenta conectar à ECU percorrendo as camadas de protocolo em ordem:
   /// OBD-II padrão (mais simples e confiável quando o carro suporta) →
-  /// Marelli proprietário via KWP2000 → Marelli proprietário via
-  /// ISO9141-2. Lembra qual camada respondeu (SharedPreferences) e tenta
-  /// essa primeiro nas próximas conexões, evitando repetir as tentativas
-  /// que já se sabe que falham neste carro. Retorna a camada que
-  /// respondeu, ou null se nenhuma respondeu.
+  /// Marelli proprietário via KWP2000 fast-init → KWP2000 slow-init →
+  /// ISO9141-2 real. Lembra qual camada respondeu (SharedPreferences) e
+  /// tenta essa primeiro nas próximas conexões, evitando repetir as
+  /// tentativas que já se sabe que falham neste carro. Retorna a camada
+  /// que respondeu, ou null se nenhuma respondeu.
   Future<EcuProtocol?> connectEcuAutoDetect({
     Duration perLayerTimeout = const Duration(seconds: 14),
     bool rememberSuccess = true,
   }) async {
     const order = [
       EcuProtocol.obd2Standard,
-      EcuProtocol.kwp2000,
+      EcuProtocol.kwp2000FastInit,
+      EcuProtocol.kwp2000SlowInit,
       EcuProtocol.iso9141,
     ];
     final remembered = rememberSuccess ? await _loadLastLayer() : null;

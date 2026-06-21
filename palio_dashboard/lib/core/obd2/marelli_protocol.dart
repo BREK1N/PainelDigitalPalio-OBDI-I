@@ -28,8 +28,23 @@ class MarelliFormulas {
 /// Comandos AT que configuram apenas o chip ELM327 em si — não dependem da
 /// ECU do carro estar ligada/respondendo. Se algum desses falhar, o problema
 /// é no adaptador/Bluetooth, não na ECU.
-/// ATSP4 = ISO 9141-2 (4AF/4EF/59F). Use [kElm327SetupKwp2000] para o IAW 5AF.
+///
+/// Números de protocolo do ELM327 (datasheet oficial — uma versão anterior
+/// deste arquivo usava ATSP4 rotulado como "ISO9141-2", o que está errado):
+///   ATSP3 = ISO 9141-2 (5-baud init)         ← nunca tentado até agora
+///   ATSP4 = ISO 14230-4 KWP2000 (5-baud init)
+///   ATSP5 = ISO 14230-4 KWP2000 (fast init)
 const List<String> kElm327SetupIso9141 = [
+  'ATZ',
+  'ATE0',
+  'ATL0',
+  'ATH1',
+  'ATSP3',
+  'ATAT2',
+  'ATST96',
+];
+
+const List<String> kElm327SetupKwp2000SlowInit = [
   'ATZ',
   'ATE0',
   'ATL0',
@@ -39,7 +54,7 @@ const List<String> kElm327SetupIso9141 = [
   'ATST96',
 ];
 
-const List<String> kElm327SetupKwp2000 = [
+const List<String> kElm327SetupKwp2000FastInit = [
   'ATZ',
   'ATE0',
   'ATL0',

@@ -68,6 +68,7 @@ class SettingsScreen extends ConsumerWidget {
     final dataSourceMode = ref.watch(dataSourceModeProvider);
     final connectingAddress = ref.watch(connectingAddressProvider);
     final cloudCode = ref.watch(cloudRelayCodeProvider);
+    final manualProtocol = ref.watch(manualEcuProtocolProvider);
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -195,6 +196,54 @@ class SettingsScreen extends ConsumerWidget {
                   }
                 },
               ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Protocolo da ECU',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: AppTheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 4,
+              ),
+              child: DropdownButtonFormField<EcuProtocol?>(
+                initialValue: manualProtocol,
+                dropdownColor: AppTheme.surface,
+                decoration: const InputDecoration(border: InputBorder.none),
+                style: const TextStyle(color: Colors.white),
+                items: [
+                  const DropdownMenuItem<EcuProtocol?>(
+                    value: null,
+                    child: Text(
+                      'Automático (tenta todos em ordem)',
+                    ),
+                  ),
+                  ...Obd2Service.allProtocolsInOrder.map(
+                    (p) => DropdownMenuItem<EcuProtocol?>(
+                      value: p,
+                      child: Text(p.displayLabel),
+                    ),
+                  ),
+                ],
+                onChanged: (value) =>
+                    ref.read(manualEcuProtocolProvider.notifier).state =
+                        value,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              'No modo automático, "Conectar à ECU" no Dashboard tenta '
+              'cada protocolo em ordem até um responder. Escolha um '
+              'específico aqui se já souber qual funciona no seu carro.',
+              style: TextStyle(color: Colors.white38, fontSize: 11),
             ),
           ),
           const SizedBox(height: 24),

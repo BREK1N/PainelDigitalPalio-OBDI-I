@@ -30,6 +30,11 @@ final connectingEcuProvider = StateProvider<bool>((ref) => false);
 /// ficaria preso no estado da tentativa anterior).
 final obdReconnectTokenProvider = StateProvider<int>((ref) => 0);
 
+/// Protocolo escolhido manualmente em Configurações para o botão "Conectar
+/// à ECU" usar, ou null para tentar todas as camadas automaticamente (via
+/// [Obd2Service.connectEcuAutoDetect]).
+final manualEcuProtocolProvider = StateProvider<EcuProtocol?>((ref) => null);
+
 /// Emite um [OBDDataModel] a cada 100ms. Em modo simulação gera dados fake;
 /// em modo live, reconecta automaticamente ao último adaptador ELM327
 /// pareado (MAC salvo em SharedPreferences) e inicia o loop de PIDs.

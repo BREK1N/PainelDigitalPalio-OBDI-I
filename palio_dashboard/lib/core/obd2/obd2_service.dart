@@ -135,6 +135,62 @@ class Obd2Service {
     return false;
   }
 
+  /// Todas as camadas de protocolo conhecidas, na ordem usada por
+  /// [connectEcuAutoDetect] quando não há nenhuma lembrada/preferida.
+  static const List<EcuProtocol> allProtocolsInOrder = [
+    EcuProtocol.obd2Standard,
+    EcuProtocol.kwp2000FastInit,
+    EcuProtocol.kwp2000SlowInit,
+    EcuProtocol.iso9141,
+  ];
+
+  /// Configura o adaptador para [protocol] e tenta ler os PIDs
+  /// correspondentes uma única vez (sem passar para outra camada em caso
+  /// de falha). Usado tanto pelo modo manual (usuário escolhe o
+  /// protocolo) quanto internamente por [connectEcuAutoDetect].
+  Future<bool> connectEcuViaProtocol(
+    EcuProtocol protocol, {
+    Duration timeout = const Duration(seconds: 14),
+    bool rememberOnSuccess = true,
+  }) async {
+    _logSink?.call(
+      LogLevel.info,
+      'obd2',
+      'Tentando ECU via ${protocol.displayLabel}...',
+    );
+    try {
+      await setupAdapter(protocol: protocol);
+    } catch (e) {
+      _logSink?.call(
+        LogLevel.error,
+        'obd2',
+        'Falha ao configurar adaptador para ${protocol.displayLabel}: $e',
+      );
+      return false;
+    }
+    final ok = protocol == EcuProtocol.obd2Standard
+        ? await connectStandardObd2(timeout: timeout)
+        : await connectEcu(timeout: timeout);
+    if (ok) {
+      _activeLayer = protocol;
+      _last = _last.copyWith(ecuProtocolLabel: protocol.displayLabel);
+      _dataController.add(_last);
+      _logSink?.call(
+        LogLevel.info,
+        'obd2',
+        'ECU conectada via ${protocol.displayLabel}',
+      );
+      if (rememberOnSuccess) await _saveLastLayer(protocol);
+    } else {
+      _logSink?.call(
+        LogLevel.warn,
+        'obd2',
+        '${protocol.displayLabel} não respondeu',
+      );
+    }
+    return ok;
+  }
+
   /// Tenta conectar à ECU percorrendo as camadas de protocolo em ordem:
   /// OBD-II padrão (mais simples e confiável quando o carro suporta) →
   /// Marelli proprietário via KWP2000 fast-init → KWP2000 slow-init →
@@ -146,53 +202,18 @@ class Obd2Service {
     Duration perLayerTimeout = const Duration(seconds: 14),
     bool rememberSuccess = true,
   }) async {
-    const order = [
-      EcuProtocol.obd2Standard,
-      EcuProtocol.kwp2000FastInit,
-      EcuProtocol.kwp2000SlowInit,
-      EcuProtocol.iso9141,
-    ];
     final remembered = rememberSuccess ? await _loadLastLayer() : null;
     final tryOrder = remembered == null
-        ? order
-        : [remembered, ...order.where((p) => p != remembered)];
+        ? allProtocolsInOrder
+        : [remembered, ...allProtocolsInOrder.where((p) => p != remembered)];
 
     for (final protocol in tryOrder) {
-      _logSink?.call(
-        LogLevel.info,
-        'obd2',
-        'Tentando ECU via ${protocol.displayLabel}...',
+      final ok = await connectEcuViaProtocol(
+        protocol,
+        timeout: perLayerTimeout,
+        rememberOnSuccess: rememberSuccess,
       );
-      try {
-        await setupAdapter(protocol: protocol);
-      } catch (e) {
-        _logSink?.call(
-          LogLevel.error,
-          'obd2',
-          'Falha ao configurar adaptador para ${protocol.displayLabel}: $e',
-        );
-        continue;
-      }
-      final ok = protocol == EcuProtocol.obd2Standard
-          ? await connectStandardObd2(timeout: perLayerTimeout)
-          : await connectEcu(timeout: perLayerTimeout);
-      if (ok) {
-        _activeLayer = protocol;
-        _last = _last.copyWith(ecuProtocolLabel: protocol.displayLabel);
-        _dataController.add(_last);
-        _logSink?.call(
-          LogLevel.info,
-          'obd2',
-          'ECU conectada via ${protocol.displayLabel}',
-        );
-        if (rememberSuccess) await _saveLastLayer(protocol);
-        return protocol;
-      }
-      _logSink?.call(
-        LogLevel.warn,
-        'obd2',
-        '${protocol.displayLabel} falhou, tentando próxima camada...',
-      );
+      if (ok) return protocol;
     }
     _activeLayer = null;
     _logSink?.call(LogLevel.error, 'obd2', 'Nenhuma camada de protocolo respondeu');

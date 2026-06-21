@@ -24,7 +24,14 @@ Future<void> _connectEcu(BuildContext context, WidgetRef ref) async {
 
   ref.read(connectingEcuProvider.notifier).state = true;
   try {
-    final protocol = await service.connectEcuAutoDetect();
+    final manualProtocol = ref.read(manualEcuProtocolProvider);
+    EcuProtocol? protocol;
+    if (manualProtocol != null) {
+      final ok = await service.connectEcuViaProtocol(manualProtocol);
+      protocol = ok ? manualProtocol : null;
+    } else {
+      protocol = await service.connectEcuAutoDetect();
+    }
     if (protocol != null) {
       unawaited(service.startLoop());
     }
@@ -34,8 +41,11 @@ Future<void> _connectEcu(BuildContext context, WidgetRef ref) async {
           content: Text(
             protocol != null
                 ? 'ECU conectada via ${protocol.displayLabel}'
-                : 'ECU não respondeu em nenhum protocolo (verifique a '
-                    'ignição)',
+                : manualProtocol != null
+                    ? '${manualProtocol.displayLabel} não respondeu '
+                        '(verifique a ignição)'
+                    : 'ECU não respondeu em nenhum protocolo (verifique a '
+                        'ignição)',
           ),
         ),
       );

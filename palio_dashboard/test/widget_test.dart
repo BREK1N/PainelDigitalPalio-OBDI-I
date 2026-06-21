@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,4 +34,39 @@ void main() {
 
     expect(find.text('RPM'), findsOneWidget);
   });
+
+  testWidgets(
+    'Dashboard não estoura layout em tela pequena (800x480) com botão de ECU visível',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 480));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            obdDataProvider.overrideWith(
+              (ref) => Stream.value(
+                OBDDataModel.empty().copyWith(
+                  btStatus: ConnectionStatus.connected,
+                  ecuResponding: false,
+                ),
+              ),
+            ),
+            otaServiceProvider.overrideWithValue(_NoUpdateOtaService()),
+          ],
+          child: const PalioDashApp(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+
+      // Com OBD2 conectado e ECU não respondendo, o botão "Conectar à ECU"
+      // aparece — os ícones de DTC/Configurações devem continuar visíveis
+      // ao lado dele, sem estourar o layout (RenderFlex overflow).
+      expect(find.text('Conectar à ECU'), findsOneWidget);
+      expect(find.byIcon(Icons.warning_amber), findsOneWidget);
+      expect(find.byIcon(Icons.settings), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

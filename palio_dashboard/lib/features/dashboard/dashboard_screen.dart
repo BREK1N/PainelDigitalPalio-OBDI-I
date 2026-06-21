@@ -133,87 +133,128 @@ class DashboardScreen extends ConsumerWidget {
                           child: RpmChart(spots: rpmHistory),
                         ),
                         Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Wrap(
-                                alignment: WrapAlignment.center,
-                                spacing: 10,
-                                runSpacing: 4,
-                                children: [
-                                  _StatusBadge(
-                                    label: 'OBD2',
-                                    status: data.btStatus,
-                                  ),
-                                  _EcuStatusBadge(
-                                    responding: data.ecuResponding,
-                                  ),
-                                ],
-                              ),
-                              if (data.ecuProtocolLabel != null)
-                                Text(
-                                  data.ecuProtocolLabel!,
-                                  style: const TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              if (canConnectEcu)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: SizedBox(
-                                    height: 28,
-                                    child: connectingEcu
-                                        ? const Center(
-                                            child: SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppTheme.accent,
-                                              ),
-                                            ),
-                                          )
-                                        : TextButton(
-                                            onPressed: () =>
-                                                _connectEcu(context, ref),
-                                            child: const Text(
-                                              'Conectar à ECU',
-                                              style: TextStyle(fontSize: 12),
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                              Row(
+                          child: LayoutBuilder(
+                            builder: (context, sideConstraints) {
+                              // Telas mais baixas (ex.: 800×480) têm menos
+                              // espaço vertical aqui — encolhe ícones/fontes
+                              // em vez de deixar o conteúdo estourar e
+                              // sumir (cortado pelo Column).
+                              final compact = sideConstraints.maxHeight < 110;
+                              final iconSize = compact ? 18.0 : 24.0;
+
+                              return Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.warning_amber,
-                                      color: Colors.white54,
-                                    ),
-                                    tooltip: 'Códigos de falha',
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => const DtcScreen(),
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    spacing: 8,
+                                    runSpacing: 2,
+                                    children: [
+                                      _StatusBadge(
+                                        label: 'OBD2',
+                                        status: data.btStatus,
                                       ),
-                                    ),
+                                      _EcuStatusBadge(
+                                        responding: data.ecuResponding,
+                                      ),
+                                      if (data.ecuProtocolLabel != null)
+                                        Text(
+                                          data.ecuProtocolLabel!,
+                                          style: const TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.settings,
-                                      color: Colors.white54,
-                                    ),
-                                    tooltip: 'Configurações',
-                                    onPressed: () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => const SettingsScreen(),
+                                  SizedBox(height: compact ? 2 : 6),
+                                  // Botão/spinner de ECU e os ícones de
+                                  // navegação sempre na MESMA linha, para
+                                  // que um nunca empurre o outro para fora
+                                  // do espaço visível.
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      if (canConnectEcu)
+                                        Expanded(
+                                          child: connectingEcu
+                                              ? const Center(
+                                                  child: SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: AppTheme.accent,
+                                                    ),
+                                                  ),
+                                                )
+                                              : TextButton(
+                                                  style: TextButton.styleFrom(
+                                                    padding: EdgeInsets.zero,
+                                                    minimumSize: Size.zero,
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                  ),
+                                                  onPressed: () =>
+                                                      _connectEcu(context, ref),
+                                                  child: Text(
+                                                    'Conectar à ECU',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize:
+                                                          compact ? 9 : 11,
+                                                    ),
+                                                  ),
+                                                ),
+                                        ),
+                                      IconButton(
+                                        iconSize: iconSize,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        visualDensity: VisualDensity.compact,
+                                        icon: Icon(
+                                          Icons.warning_amber,
+                                          size: iconSize,
+                                          color: Colors.white54,
+                                        ),
+                                        tooltip: 'Códigos de falha',
+                                        onPressed: () =>
+                                            Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => const DtcScreen(),
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        iconSize: iconSize,
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        visualDensity: VisualDensity.compact,
+                                        icon: Icon(
+                                          Icons.settings,
+                                          size: iconSize,
+                                          color: Colors.white54,
+                                        ),
+                                        tooltip: 'Configurações',
+                                        onPressed: () =>
+                                            Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const SettingsScreen(),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ),
                       ],

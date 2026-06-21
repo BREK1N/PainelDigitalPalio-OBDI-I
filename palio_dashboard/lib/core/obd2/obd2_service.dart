@@ -137,7 +137,7 @@ class Obd2Service {
   /// que já se sabe que falham neste carro. Retorna a camada que
   /// respondeu, ou null se nenhuma respondeu.
   Future<EcuProtocol?> connectEcuAutoDetect({
-    Duration perLayerTimeout = const Duration(seconds: 5),
+    Duration perLayerTimeout = const Duration(seconds: 8),
     bool rememberSuccess = true,
   }) async {
     const order = [
